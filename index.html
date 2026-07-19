@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. Uplink</title>
+    <style>
+        body { background-color: #050505; color: #00ffff; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .hud { border: 2px solid rgba(0, 255, 255, 0.3); padding: 40px; border-radius: 10px; box-shadow: 0 0 20px rgba(0, 255, 255, 0.1); text-align: center; width: 90%; max-width: 500px; }
+        #status { margin: 20px 0; min-height: 60px; font-size: 1.1em; }
+        .listening { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 10px #00ffff; } 50% { box-shadow: 0 0 30px #00ffff; } 100% { box-shadow: 0 0 10px #00ffff; } }
+        button { background: transparent; color: #00ffff; border: 1px solid #00ffff; padding: 15px 30px; font-size: 1.2em; cursor: pointer; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+
+<div class="hud" id="hudFrame">
+    <h2>STARK INDUSTRIES // HUD</h2>
+    <div id="status">System standby. Click to activate.</div>
+    <button id="micBtn" onclick="activateSystem()">Power On</button>
+</div>
+
+<script>
+    const statusDiv = document.getElementById('status');
+    const micBtn = document.getElementById('micBtn');
+    const hud = document.getElementById('hudFrame');
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    recognition.continuous = true;
+    recognition.lang = 'en-US';
+    let isSystemActive = false;
+    let isSpeaking = false; // Tracks if Jarvis is talking
+
+    function activateSystem() {
+        isSystemActive = true;
+        recognition.start();
+        micBtn.style.display = "none";
+        hud.classList.add("listening");
+        statusDiv.innerText = "System Active. Say 'Jarvis' followed by your command.";
+    }
+
+    // --- NEW: Browser-based Voice Engine ---
+    function speakText(text) {
+        isSpeaking = true;
+        recognition.stop(); // Turn off mic so he doesn't hear himself
+        hud.classList.remove("listening");
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.1; // Slightly faster talking speed
+        
+        // When he finishes speaking, INSTANTLY turn the mic back on
+        utterance.onend = () => {
+            isSpeaking = false;
+            if (isSystemActive) {
+                recognition.start();
+                hud.classList.add("listening");
+                statusDiv.innerText = "Listening...";
+            }
+        };
+        
+        window.speechSynthesis.speak(utterance);
+    }
+    // ----------------------------------------
+
+    recognition.onresult = async (event) => {
+        const current = event.resultIndex;
+        let transcript = event.results[current][0].transcript.trim().toLowerCase();
+        transcript = transcript.replace(/[.,!?]/g, "");
+
+        if (transcript.startsWith("jarvis")) {
+            const command = transcript.replace("jarvis", "").trim();
+            
+            if (command.length > 0) {
+                statusDiv.innerText = `Command recognized: "${command}"\nTransmitting...`;
+                
+                try {
+                    const response = await fetch('http://127.0.0.1:8000/command', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: command })
+                    });
+                    
+                    const data = await response.json();
+                    statusDiv.innerText = `J.A.R.V.I.S: ${data.response}`;
+                    
+                    // Trigger the browser voice
+                    speakText(data.response);
+                    
+                } catch (error) {
+                    statusDiv.innerText = "Error: Cannot connect to core systems.";
+                }
+            }
+        }
+    };
+
+    recognition.onend = () => {
+        // Only restart if the system is active AND Jarvis isn't currently speaking
+        if (isSystemActive && !isSpeaking) recognition.start();
+    };
+</script>
+</body>
+</html>
